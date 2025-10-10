@@ -2,3 +2,8 @@
 ./Lib/*
 ./Scripts/*
 ./share/*
+
+Include/*
+Lib/*
+Scripts/*
+share/*
