@@ -5,26 +5,8 @@ import random
 import matplotlib.pyplot as plt
 import math
 
-# Simple Mean Loss function
+# Util funcs
 
-class MeanLoss(nn.Module):
-    def __init__(self):
-        super(MeanLoss, self).__init__()
-        
-    def forward(self, input_tensor):
-        loss_out = torch.mean(input_tensor)
-        return loss_out
-    
-    def loss_with_costgrad(self, net_out):
-        L = net_out.shape[0]
-        loss_out = self.forward(net_out)
-        dloss_out = torch.tensor([
-           1.0 / L for _ in range(L)
-        ])
-        return loss_out, dloss_out
-    
-
-torch.use_deterministic_algorithms=True
 
 def input(gamma:float)->torch.Tensor:
   gamma=torch.Tensor([gamma])
@@ -33,6 +15,34 @@ def input(gamma:float)->torch.Tensor:
 
 def flatten(ls):
   return [item for sublist in ls for item in sublist]
+
+
+# Simple Mean Loss function
+
+def mean_loss(inp):
+    return torch.mean(inp)
+
+# Loss Wrapper function, returns the loss and the gradient of loss wrt net output
+
+class LossWrapper(nn.Module):
+    def __init__(self, loss_function):
+      super(LossWrapper, self).__init__()
+      self.loss_function = loss_function
+
+    def loss_with_costgrad(self, net_out):
+        L = net_out.shape[0]
+        ret_loss = self.loss_function(net_out)
+
+        nout = net_out.clone().detach()
+        nout.requires_grad_(True)
+        loss_out = self.loss_function(nout)
+        nout.retain_grad()
+        loss_out.backward()
+
+        return ret_loss, nout.grad      
+        
+
+torch.use_deterministic_algorithms=True
 
 def create_model(width, depth, seed, activation:nn.Module):
   torch.manual_seed(seed)
@@ -68,18 +78,20 @@ def undo_first_in_chainrule(grad, dCdF, dev):
     
     return dFunc.to(dev)
    
-def get_NTK(model, ref_input, input, device):
-   loss_function = MeanLoss()
+def get_NTK(model, loss_function, ref_input, input, device):
+   
+   lfn = LossWrapper(loss_function)
 
    out1 = model.forward(ref_input)
-   loss, g_loss = loss_function.loss_with_costgrad(out1) # return loss and gradient of loss wrt function output
+  #  lfn.loss_with_costgrad(out1)
+   loss, g_loss = lfn.loss_with_costgrad(out1) # return loss and gradient of loss wrt function output
 
    loss.backward()
    cost_grads_1 = get_cost_grads(model) # dC/dtheta
    N1 = undo_first_in_chainrule(cost_grads_1, g_loss, device) # undoing first chainrule to get vector of dFunctionOutput/dTheta (actual NTK element)
 
    out2 = model.forward(input)
-   loss2, g_loss2 = loss_function.loss_with_costgrad(out2)
+   loss2, g_loss2 = lfn.loss_with_costgrad(out2)
    
    loss2.backward()
    cost_grads_2 = get_cost_grads(model)
@@ -91,22 +103,22 @@ def get_NTK(model, ref_input, input, device):
    return NTK
 
 
-def doNTK(model, device, gamma_spacing:float=0.01)->torch.Tensor:
+def doNTK(model, loss_function, device, gamma_spacing:float=0.01)->torch.Tensor:
   gammas = torch.arange(-1, 1, gamma_spacing)
   
   NTK_arr = [
-     get_NTK(model, input(0.0).to(device), input(gamma).to(device), device) for gamma in gammas
+     get_NTK(model, loss_function, input(0.0).to(device), input(gamma).to(device), device) for gamma in gammas
   ]
   
   return gammas, NTK_arr
 
-def doNTK_surface(model, device, numpts)->torch.Tensor:
+def doNTK_surface(model, loss_function, device, numpts)->torch.Tensor:
   X = np.linspace(-1, 1, numpts, dtype=np.float32)
   Y = np.linspace(-1, 1, numpts, dtype=np.float32)
   gX, gY = np.meshgrid(X, Y)
 
   gZ = [
-     [get_NTK(model, torch.tensor([_X, _Y]).to(device), torch.tensor([1.0, 0.0]).to(device), device)[0, 0].item() for _X in X] for _Y in Y
+     [get_NTK(model, loss_function, torch.tensor([_X, _Y]).to(device), torch.tensor([1.0, 0.0]).to(device), device)[0, 0].item() for _X in X] for _Y in Y
   ]
   
   return gX, gY, np.array(gZ)
@@ -122,14 +134,14 @@ else:
 
 mod = create_model(100, 4, 32, nn.ReLU).to(device)
 
-X, Y, Z = doNTK_surface(mod, device, 50)
+X, Y, Z = doNTK_surface(mod, mean_loss, device, 50)
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 surf = ax.plot_surface(X, Y, Z, cmap='viridis')
 plt.savefig("img/width100_surface.png")
 plt.clf()
 
-X, Y = doNTK(mod, device, 0.01)
+X, Y = doNTK(mod, mean_loss, device, 0.01)
 bY = [Y[n][0, 0].item() for n in range(len(Y))]
 plt.plot(X, bY)
 plt.savefig("img/width100.png")
@@ -140,14 +152,14 @@ plt.clf()
 
 mod = create_model(500, 4, 32, nn.ReLU).to(device)
 
-X, Y, Z = doNTK_surface(mod, device, 50)
+X, Y, Z = doNTK_surface(mod, mean_loss, device, 50)
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 surf = ax.plot_surface(X, Y, Z, cmap='viridis')
 plt.savefig("img/width500_surface.png")
 plt.clf()
 
-X, Y = doNTK(mod, device, 0.01)
+X, Y = doNTK(mod, mean_loss, device, 0.01)
 bY = [Y[n][0, 0].item() for n in range(len(Y))]
 plt.plot(X,bY)
 plt.savefig("img/width500.png")
@@ -157,14 +169,14 @@ plt.clf()
 
 mod = create_model(1000, 4, 32, nn.ReLU).to(device)
 
-X, Y, Z = doNTK_surface(mod, device, 50)
+X, Y, Z = doNTK_surface(mod, mean_loss, device, 50)
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 surf = ax.plot_surface(X, Y, Z, cmap='viridis')
 plt.savefig("img/width1000_surface.png")
 plt.clf()
 
-X, Y = doNTK(mod, device, 0.01)
+X, Y = doNTK(mod, mean_loss, device, 0.01)
 bY = [Y[n][0, 0].item() for n in range(len(Y))]
 plt.plot(X,bY)
 plt.savefig("img/width1000.png")
@@ -174,14 +186,14 @@ plt.clf()
 
 mod = create_model(1500, 4, 32, nn.ReLU).to(device)
 
-X, Y, Z = doNTK_surface(mod, device, 50)
+X, Y, Z = doNTK_surface(mod, mean_loss, device, 50)
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 surf = ax.plot_surface(X, Y, Z, cmap='viridis')
 plt.savefig("img/width1500_surface.png")
 plt.clf()
 
-X, Y = doNTK(mod, device, 0.01)
+X, Y = doNTK(mod, mean_loss, device, 0.01)
 bY = [Y[n][0, 0].item() for n in range(len(Y))]
 plt.plot(X,bY)
 plt.savefig("img/width1500.png")
@@ -191,7 +203,7 @@ plt.clf()
 
 # mod = create_model(2000, 4, 32, nn.ReLU).to(device)
 
-# X, Y, Z = doNTK_surface(mod, device, 50)
+# X, Y, Z = doNTK_surface(mod, mean_loss, device, 50)
 # fig = plt.figure()
 # ax = fig.add_subplot(111, projection='3d')
 # surf = ax.plot_surface(X, Y, Z, cmap='viridis')
