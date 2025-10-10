@@ -61,14 +61,14 @@ def get_cost_grads(model):
     return dCost
     
 
-def undo_first_in_chainrule(grad, dCdF):
+def undo_first_in_chainrule(grad, dCdF, dev):
     dFunc = torch.stack([
-        grad / torch.Tensor([dCdF[i]]) for i in range(dCdF.shape[0])
+        grad / torch.Tensor([dCdF[i]]).to(dev) for i in range(dCdF.shape[0])
     ])
     
-    return dFunc
+    return dFunc.to(dev)
    
-def get_NTK(model, ref_input, input):
+def get_NTK(model, ref_input, input, device):
    loss_function = MeanLoss()
 
    out1 = model.forward(ref_input)
@@ -76,14 +76,14 @@ def get_NTK(model, ref_input, input):
 
    loss.backward()
    cost_grads_1 = get_cost_grads(model) # dC/dtheta
-   N1 = undo_first_in_chainrule(cost_grads_1, g_loss) # undoing first chainrule to get vector of dFunctionOutput/dTheta (actual NTK element)
+   N1 = undo_first_in_chainrule(cost_grads_1, g_loss, device) # undoing first chainrule to get vector of dFunctionOutput/dTheta (actual NTK element)
 
    out2 = model.forward(input)
    loss2, g_loss2 = loss_function.loss_with_costgrad(out2)
    
    loss2.backward()
    cost_grads_2 = get_cost_grads(model)
-   N2 = undo_first_in_chainrule(cost_grads_2, g_loss2)
+   N2 = undo_first_in_chainrule(cost_grads_2, g_loss2, device)
 
    # Made adjustment for 2d NTK
    NTK = torch.matmul(N1, torch.t(N2))
@@ -91,19 +91,24 @@ def get_NTK(model, ref_input, input):
    return NTK
 
 
-def doNTK(model, gamma_spacing:float=0.01)->torch.Tensor:
+def doNTK(model, device, gamma_spacing:float=0.01)->torch.Tensor:
   gammas = torch.arange(-1, 1, gamma_spacing)
   
   NTK_arr = [
-     get_NTK(model, input(0.0), input(gamma)) for gamma in gammas
+     get_NTK(model, input(0.0).to(device), input(gamma).to(device), device) for gamma in gammas
   ]
   
   return gammas, NTK_arr
 
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+    print("Using GPU:", torch.cuda.get_device_name(0))
+else:
+    device = torch.device("cpu")
+    print("Using CPU")
 
-
-mod = create_model(100, 4, 32, nn.ReLU)
-X, Y = doNTK(mod, 0.01)
+mod = create_model(100, 4, 32, nn.ReLU).to(device)
+X, Y = doNTK(mod, device, 0.01)
 bY = [Y[n][0, 0].item() for n in range(len(Y))]
 
 plt.plot(X,bY)
@@ -111,8 +116,8 @@ plt.savefig("img/width100.png")
 print("Saved with width 100.")
 plt.clf()
 
-mod = create_model(500, 4, 32, nn.ReLU)
-X, Y = doNTK(mod, 0.01)
+mod = create_model(500, 4, 32, nn.ReLU).to(device)
+X, Y = doNTK(mod, device, 0.01)
 bY = [Y[n][0, 0].item() for n in range(len(Y))]
 
 plt.plot(X,bY)
@@ -121,8 +126,8 @@ print("Saved with width 500.")
 plt.clf()
 
 
-mod = create_model(1000, 4, 32, nn.ReLU)
-X, Y = doNTK(mod, 0.01)
+mod = create_model(1000, 4, 32, nn.ReLU).to(device)
+X, Y = doNTK(mod, device, 0.01)
 bY = [Y[n][0, 0].item() for n in range(len(Y))]
 
 plt.plot(X,bY)
@@ -131,8 +136,8 @@ print("Saved with width 1000.")
 plt.clf()
 
 
-mod = create_model(1500, 4, 32, nn.ReLU)
-X, Y = doNTK(mod, 0.01)
+mod = create_model(1500, 4, 32, nn.ReLU).to(device)
+X, Y = doNTK(mod, device, 0.01)
 bY = [Y[n][0, 0].item() for n in range(len(Y))]
 
 plt.plot(X,bY)
@@ -141,8 +146,8 @@ print("Saved with width 1500.")
 plt.clf()
 
 
-mod = create_model(2000, 4, 32, nn.ReLU)
-X, Y = doNTK(mod, 0.01)
+mod = create_model(2000, 4, 32, nn.ReLU).to(device)
+X, Y = doNTK(mod, device, 0.01)
 bY = [Y[n][0, 0].item() for n in range(len(Y))]
 
 plt.plot(X,bY)
