@@ -5,6 +5,8 @@ import random
 import matplotlib.pyplot as plt
 import math
 
+
+
 # Util funcs
 
 
@@ -118,7 +120,7 @@ def doNTK_surface(model, loss_function, device, numpts)->torch.Tensor:
   gX, gY = np.meshgrid(X, Y)
 
   gZ = [
-     [get_NTK(model, loss_function, torch.tensor([_X, _Y]).to(device), torch.tensor([1.0, 0.0]).to(device), device)[0, 0].item() for _X in X] for _Y in Y
+     [get_NTK(model, loss_function, torch.tensor([1.0, 0.0]).to(device), torch.tensor([_X, _Y]).to(device), device)[0, 0].item() for _X in X] for _Y in Y
   ]
   
   return gX, gY, np.array(gZ)
@@ -130,118 +132,30 @@ else:
     device = torch.device("cpu")
     print("Using CPU")
 
+########################################### ADJUST HERE
+ACTIVATION = nn.ReLU
+WIDTHS = [100, 500, 1000, 1500]
+DEPTH = 4
+SEED = 32
+LOSS = mean_loss
+SURFACE_POINTS = 50
+###########################################
 
+for W in WIDTHS:
+    mod = create_model(W, DEPTH, SEED, ACTIVATION).to(device)
+    X, Y, Z = doNTK_surface(mod, LOSS, device, SURFACE_POINTS)
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    surf = ax.plot_surface(X, Y, Z, cmap='viridis')
+    s = "img/width_"+str(W)+"_Act_"+ACTIVATION.__name__
+    plt.savefig(s+"_surface.png")
+    plt.clf()
 
-mod = create_model(100, 4, 32, nn.ReLU).to(device)
+    gap = 2.0 / SURFACE_POINTS
+    X, Y = doNTK(mod, LOSS, device, gap)
+    bY = [Y[n][0, 0].item() for n in range(len(Y))]
+    plt.plot(X, bY)
+    plt.savefig(s+".png")
+    print("Saved with width "+str(W))
+    plt.clf()
 
-X, Y, Z = doNTK_surface(mod, mean_loss, device, 50)
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-surf = ax.plot_surface(X, Y, Z, cmap='viridis')
-plt.savefig("img/width100_surface.png")
-plt.clf()
-
-X, Y = doNTK(mod, mean_loss, device, 0.01)
-bY = [Y[n][0, 0].item() for n in range(len(Y))]
-plt.plot(X, bY)
-plt.savefig("img/width100.png")
-print("Saved with width 100.")
-plt.clf()
-
-
-
-mod = create_model(500, 4, 32, nn.ReLU).to(device)
-
-X, Y, Z = doNTK_surface(mod, mean_loss, device, 50)
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-surf = ax.plot_surface(X, Y, Z, cmap='viridis')
-plt.savefig("img/width500_surface.png")
-plt.clf()
-
-X, Y = doNTK(mod, mean_loss, device, 0.01)
-bY = [Y[n][0, 0].item() for n in range(len(Y))]
-plt.plot(X,bY)
-plt.savefig("img/width500.png")
-print("Saved with width 500.")
-plt.clf()
-
-
-mod = create_model(1000, 4, 32, nn.ReLU).to(device)
-
-X, Y, Z = doNTK_surface(mod, mean_loss, device, 50)
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-surf = ax.plot_surface(X, Y, Z, cmap='viridis')
-plt.savefig("img/width1000_surface.png")
-plt.clf()
-
-X, Y = doNTK(mod, mean_loss, device, 0.01)
-bY = [Y[n][0, 0].item() for n in range(len(Y))]
-plt.plot(X,bY)
-plt.savefig("img/width1000.png")
-print("Saved with width 1000.")
-plt.clf()
-
-
-mod = create_model(1500, 4, 32, nn.ReLU).to(device)
-
-X, Y, Z = doNTK_surface(mod, mean_loss, device, 50)
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-surf = ax.plot_surface(X, Y, Z, cmap='viridis')
-plt.savefig("img/width1500_surface.png")
-plt.clf()
-
-X, Y = doNTK(mod, mean_loss, device, 0.01)
-bY = [Y[n][0, 0].item() for n in range(len(Y))]
-plt.plot(X,bY)
-plt.savefig("img/width1500.png")
-print("Saved with width 1500.")
-plt.clf()
-
-
-# mod = create_model(2000, 4, 32, nn.ReLU).to(device)
-
-# X, Y, Z = doNTK_surface(mod, mean_loss, device, 50)
-# fig = plt.figure()
-# ax = fig.add_subplot(111, projection='3d')
-# surf = ax.plot_surface(X, Y, Z, cmap='viridis')
-# plt.savefig("img/width2000_surface.png")
-# plt.clf()
-
-# X, Y = doNTK(mod, device, 0.01)
-# bY = [Y[n][0, 0].item() for n in range(len(Y))]
-# plt.plot(X,bY)
-# plt.savefig("img/width2000.png")
-# print("Saved with width 2000.")
-# plt.clf()
-
-
-# # res = mod.forward(input(gamma))
-
-# # n = res.shape[0]
-
-# # loss = loss_func(res)
-
-# # loss.backward()
-
-# # # now we calculate array of dC/dtheta
-
-# # dCost = []
-# # for name, param in mod.named_parameters():
-# #    if "weight" in name:
-# #       dCost.append(param.grad.flatten())
-
-# # dCost = torch.concatenate(dCost)
-
-# # print(dCost)
-
-# # # then because dC/dtheta is a result of chain rule, we can finally divide dC/dtheta with dC/dOutput to get dOutput/dtheta, which is the NTK
-# # # dMean is [1 / n, 1 / n, 1 / n...]
-
-# # dMean = torch.Tensor([1.0 / n for k in range(n)])
-
-# # dFunc = torch.stack([
-# #    dCost / torch.Tensor([dMean[i]]) for i in range(dMean.shape[0])
-# # ])
