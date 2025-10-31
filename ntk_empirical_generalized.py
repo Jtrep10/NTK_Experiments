@@ -60,13 +60,13 @@ def create_model(width, depth, seed, out_dim,activation,parameterization='ntk'):
     layer_list.append(activation())
   layer_list.append(stax.Dense(out_dim,parameterization=parameterization))
   init_fn, apply_fn, _ = stax.serial(*layer_list)
-  kwargs = dict(
-      f=apply_fn,
+  model = dict(
+      forward=apply_fn,
       trace_axes=(),
       vmap_axes=0
   )
   _, params = init_fn(jrand.PRNGKey(seed), input(0).shape)
-  return (kwargs,params) # outputs interface directly with functions to get NTKs
+  return (model, params) # outputs interface directly with functions to get NTKs
 
 # for comparison in Jacot plots, only works for 1d output for now
 def create_infinite_width_kernel(depth,activation,parameterization='ntk'):
@@ -84,26 +84,48 @@ def create_infinite_width_kernel(depth,activation,parameterization='ntk'):
 
 """Very simple training function to see how the NTK looks before and after training. Needs to be updated to use stax instead of torch."""
 
-# def train_model(model, optimizer, loss_fn, desired_out,num_epochs, seed, device,gamma_spacing=0.01,print_loss=True):
-#   # desired_out should operate on gamma to generate a target output
-#   # loss function should be from torch.nn
-#   torch.manual_seed(seed)
-#   random.seed(seed)
-#   model=model.to(device)
-#   model.train()
-#   gamma_vec = torch.arange(-1*np.pi, np.pi, gamma_spacing)
-#   for epoch in range(num_epochs):
-#     for gamma in gamma_vec:
-#       x_in = input(gamma).to(device)
-#       out = model.forward(x_in)
-#       loss = loss_fn(out,desired_out(gamma).to(device))
-#       optimizer.zero_grad()
-#       loss.backward()
-#       optimizer.step()
-#     if print_loss:
-#       print(f"Loss at the end of epoch {epoch}: {loss}")
-#   model.eval()
-#   return model
+def create_train_data(in_dim : int, out_dim : int, num_samples : int, input_range:tuple, output_range:tuple):
+  import random
+  tx = jnp.array([[random.uniform(input_range[0], input_range[1]) for i in range(in_dim)] for n in range(num_samples)])
+  ty = jnp.array([[random.uniform(output_range[0], output_range[1]) for j in range(out_dim)] for n in range(num_samples)])
+  return tx, ty
+  
+def train_model(model, epochs, x_train, y_train, batch_size=100):
+  params = model[1]
+  model_fwd = model[0]["forward"]
+
+  from jax import grad
+  from jax.example_libraries import optimizers
+  from jax.nn import log_softmax
+
+  opt_init, opt_update, get_params = optimizers.adam(step_size=1e-3)
+  opt_state = opt_init(params)
+
+  def CEloss(params, batch):
+    inputs, targets = batch
+    logits = model_fwd(params, inputs)
+    log_probs = log_softmax(logits)
+    return -jnp.mean(jnp.sum(targets * log_probs, axis=1))  # cross-entropy
+
+  def update(step, params, batch, lr=0.001):
+    params = get_params(opt_state)
+    grads = grad(CEloss)(params, batch)
+    return opt_update(step, grads, opt_state)
+  
+  # 6. Training loop
+  stepnum = 0
+  # training per sample
+  nBatches = len(x_train) // batch_size
+
+  for epoch in range(epochs):
+      print("Epoch ", epoch)
+      for i in range(nBatches):
+          ll = i * batch_size
+          hl = ll + batch_size
+          batch = (x_train[ll:hl], y_train[ll:hl])
+          opt_state = update(epoch * nBatches + i, opt_state, batch)
+          stepnum += 1
+  return (model, params)
 
 """# NTK Calculation Functions
 
