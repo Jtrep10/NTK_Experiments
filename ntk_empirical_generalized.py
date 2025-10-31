@@ -498,28 +498,25 @@ for W in WIDTHS:
 
 # # Before and after training
 # #############
-# # Change parameters here
-# seeds = [10, 32, 43, 56]
-# num_epochs=10
-# activation=nn.ReLU
-# width=100
-# depth=4
-# out_dim=2
-# learning_rate=1e-5 # loss does not decrease when I set this too high
-# weight_decay=0
-# desired_out = lambda gamma: torch.tensor([torch.cos(gamma)*torch.sin(gamma), # Using (x_1*x_2,(x_1*x_2)^2) as a simple example, can be changed
-#                                           torch.square(torch.cos(gamma)*torch.sin(gamma))])
+# Change parameters here
+seeds = [10, 32, 43, 56]
+num_epochs=10
+activation= stax.ReLU
+width=100
+depth=4
+out_dim=2
+
+x, y = create_train_data(2, 2, 200, (0.0, 1.0), (0.0, 4.0))
 # ###############
 
-# for seed in seeds:
-#   print(f"Using seed: {seed}")
-#   model = create_model(width, depth, seed,out_dim, activation)
-#   optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay) # can try with weight decay later
-#   lambdas,NTK = get_NTK_eigenvalues(model,input(0),input(1),device,return_NTK=True)
-#   print(f"NTK before training: {NTK}")
-#   model = train_model(model,optimizer,loss,desired_out,10,seed,device,print_loss=False)
-#   lambdas,NTK = get_NTK_eigenvalues(model,input(0),input(1),device,return_NTK=True)
-#   print(f"NTK after training: {NTK}")
+for seed in seeds:
+  print(f"Using seed: {seed}")
+  model = create_model(width, depth, seed,out_dim, activation)
+  lambdas,NTK = get_NTK_eigenvalues(model, input(0), input(1), device, return_NTK=True)
+  print(f"NTK before training: {NTK}")
+  model = train_model(model, num_epochs, x, y)
+  lambdas,NTK = get_NTK_eigenvalues(model,input(0),input(1),device,return_NTK=True)
+  print(f"NTK after training: {NTK}")
 
 # # Before and after training
 # #############
