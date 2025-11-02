@@ -1,0 +1,20 @@
+{
+    "part1" : {
+        "enable": true,
+        "POINTS" : 50,
+        "ACTIVATIONS" : ["relu", "rbf"],
+        "COLORS" : ["red", "blue"],
+        "WIDTHS" : [100, 500],
+        "DEPTHS" : [2, 4],
+        "SEED_LIST" : [10, 32, 5],
+        "OUT_DIM" : 1
+    },
+    "part2": {
+        "enable" : false
+        // Some other stuff
+    },
+    "part3" : {
+        "enable" : false
+        // EVEN MORE STUFF
+    }   
+}

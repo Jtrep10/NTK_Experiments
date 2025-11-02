@@ -9,8 +9,6 @@ Original file is located at
 # Setup and Library Import
 """
 
-import torch
-import torch.nn as nn
 import numpy as np
 import random
 import matplotlib.pyplot as plt
@@ -34,12 +32,6 @@ jax.config.update("jax_default_matmul_precision", "float32")
 import os
 os.makedirs("img",exist_ok=True) # create folder for images if it does not already exist
 
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-    print("Using GPU:", torch.cuda.get_device_name(0))
-else:
-    device = torch.device("cpu")
-    print("Using CPU")
 
 """# Helper Functions"""
 
@@ -71,7 +63,7 @@ def create_model(width, depth, seed, out_dim,activation,parameterization='ntk'):
   return (model, params) # outputs interface directly with functions to get NTKs
 
 # for comparison in Jacot plots, only works for 1d output for now
-def create_infinite_width_kernel(depth,activation,parameterization='ntk'):
+def create_infinite_width_kernel(depth,activation, seed, parameterization='ntk'):
   # parameterization should be 'ntk' or 'standard'
   # see here for parameterization documentation
   # https://neural-tangents.readthedocs.io/en/latest/_autosummary/neural_tangents.stax.Dense.html
@@ -131,10 +123,7 @@ def train_model(model, epochs, x_train, y_train, batch_size=100):
 
   return (model[0], params)
 
-"""# NTK Calculation Functions
 
-Updated to use neural_tangents library.
-"""
 
 def get_NTK(model_args,ref_input,input):
   kwargs=model_args[0] # outputs of create_model
@@ -177,12 +166,6 @@ def doNTK_surface(model_args, numpts):
 
   return gX, gY, gZ
 
-# if torch.cuda.is_available(): # I don't think we need this for the stax library, but we can add it later if needed
-#     device = torch.device("cuda")
-#     print("Using GPU:", torch.cuda.get_device_name(0))
-# else:
-#     device = torch.device("cpu")
-#     print("Using CPU")
 
 def get_NTK_eigenvalues(model_args, input_1, input_2, return_NTK=False):
   # kwargs is optional arguments used only for printing latex table text
@@ -192,350 +175,72 @@ def get_NTK_eigenvalues(model_args, input_1, input_2, return_NTK=False):
   condition_number = np.max(lambdas)/np.min(lambdas)
   return lambdas, NTK
 
-"""# Experiment Cell Templates
 
-I have considered 4 experiment setups:
+def act(name):
+  if name == "relu":
+    return stax.Relu
+  elif name == "gabor":
+    return stax.Gabor
+  elif name == "rbf":
+    return stax.Rbf
 
-*   **NTK Surface**: Using a network with an input dimension of 2 and an output dimension of 1, calculate the NTK across inputs ranging -1 to 1 and use a 3d surface plot to show results.
-*   **NTK 2D Plot Varying Seed**: Using a network with an input dimension of 2 and an output dimension of 1, parameterize the inputs with $\gamma$ as $[cos(\gamma),sin(\gamma)]^T$. This allows a 2d plot of $\gamma$ against the NTK. For this experiment, I plot multiple random seeds on top of each other with the same color to show variation across seed.
-*  **Eigenvalue Histogram**: This allows NTK visualization with an arbitrary output dimension. Calculate the NTK for a specified output dimension and then calculate its eigenvalues. Pool eigenvalues across a list of seeds and show the histogram. (We could also choose to use only one seed here.) As a single number to characterize the matrix, I display the condition number, or $\kappa=\lambda_{max}/\lambda_{min}$.
-*  **Before and After Training**: Initialize a model, show the NTK, train the model, and then show NTK after training. Currently I am using a 2d output and showing condition number and the NTK itself before and after training, but this can be changed.
+def part1(config):
+  vals = config["part1"]
+  if (not vals["enable"]):
+    return 
+  ACTIVATIONS = vals['ACTIVATIONS']
+  WIDTHS = vals['WIDTHS']
+  COLORS = vals['COLORS']
+  DEPTHS = vals['DEPTHS']
+  SEED_LIST = vals['SEED_LIST']
+  SURFACE_POINTS = vals["POINTS"]
+  OUT_DIM = vals['OUT_DIM']
+  for ACTIVATION_NAME in ACTIVATIONS:
+    ACTIVATION = act(ACTIVATION_NAME)
+    for DEPTH in DEPTHS:
+      for i, WIDTH in enumerate(WIDTHS):
+        for SEED in SEED_LIST:
+          model = create_model(WIDTH, DEPTH, SEED, OUT_DIM, ACTIVATION) # use output_dim=1 for surface plots
+          gap = 2.0 / SURFACE_POINTS
+          X, Y = doNTK(model, gap)
+          bY = [Y[n].item() for n in range(len(Y))]
+          if SEED == SEED_LIST[0]:
+            plt.plot(X, bY,label=f"Width={WIDTH}", color = COLORS[i])
+          else:
+            plt.plot(X, bY, color = COLORS[i])
+      # plot infinite width, takes extra time but is interesting result
+      k_fn = create_infinite_width_kernel(DEPTH, ACTIVATION, SEED)
+      gammas = np.arange(-1*np.pi, np.pi, 0.05)
+      ntks = [k_fn(input(0),input(gamma),'ntk') for gamma in gammas]
+      ntks = np.stack(ntks).squeeze()
+      plt.plot(gammas,ntks,label="Infinite width",color='black',linewidth=3)
 
-For the first two experiments, I set the output dimension to 1 so that the NTK is scalar and no points are discarded when plotting. The third experiment allows visualization of high-dimensional NTKs.
+      s=f"img/{str(ACTIVATION.__name__)}_plot_depth{DEPTH}"
+      plt.xlabel("gamma")
+      plt.ylabel("NTK")
+      plt.legend()
+      plt.savefig(s+".png")
+      print("Saved with width "+str(WIDTH))
+      plt.show()
+      plt.clf()
 
-Templates for each experiment are included below (commented).
-"""
+def part2(config, surf_pts):
+  vals = config["part2"]
+  if (vals["enable"]):
+    return
+  pass
 
-# # Surface plots
-# ########################################### ADJUST HERE
-# ACTIVATION = stax.Relu
-# WIDTHS = [100, 500, 1000, 1500]
-# DEPTH = 4
-# SEED = 32
-# SURFACE_POINTS = 50
-# ###########################################
-
-# for W in WIDTHS:
-#     mod = create_model(W, DEPTH, SEED, 1, ACTIVATION) # use output_dim=1 for surface plots
-#     X, Y, Z = doNTK_surface(mod, SURFACE_POINTS)
-#     fig = plt.figure()
-#     ax = fig.add_subplot(111, projection='3d')
-#     surf = ax.plot_surface(X, Y, Z, cmap='viridis')
-#     s = "img/width_"+str(W)+"_Act_"+ACTIVATION.__name__
-#     plt.savefig(s+"_surface.png")
-#     plt.show()
-#     plt.clf()
-
-# # NTK 2D Plot Varying Seed
-# ########################################### ADJUST HERE
-# ACTIVATION = stax.Relu
-# WIDTHS = [100, 500, 1000, 1500]
-# WIDTH_COLORS=['b','g','y','c'] # list of colors to show different widths on the same plot, need len(colors)>=len(widths)
-# DEPTH = 4
-# SEED_LIST = [10,32,0]
-# SURFACE_POINTS = 50
-# ###########################################
+def part3(config, surf_pts):
+  vals = config["part3"]
+  if (vals["enable"]):
+    return
+  pass
 
 
-# for i in range(len(WIDTHS)):
-#   W = WIDTHS[i]
-#   color=WIDTH_COLORS[i]
-#   for seed in SEED_LIST:
-#     model = create_model(W, DEPTH, seed, 1, ACTIVATION) # use output_dim=1 for surface plots
-#     gap = 2.0 / SURFACE_POINTS
-#     X, Y = doNTK(model, gap)
-#     bY = [Y[n].item() for n in range(len(Y))]
-#     if seed==SEED_LIST[0]:
-#       plt.plot(X, bY,label=f"Width={W}",color=color)
-#     else:
-#       plt.plot(X, bY,color=color)
-
-# # plot infinite width, takes extra time but is interesting result
-# k_fn=create_infinite_width_kernel(DEPTH,ACTIVATION)
-# gammas = np.arange(-1*np.pi, np.pi, 0.05)
-# ntks=[k_fn(input(0),input(gamma),'ntk') for gamma in gammas]
-# ntks=np.stack(ntks).squeeze()
-# plt.plot(gammas,ntks,label="Infinite width",color='black',linewidth=3)
-
-# s=f"img/{str(ACTIVATION.__name__)}_2d_plot"
-# plt.xlabel("gamma")
-# plt.ylabel("NTK")
-# plt.legend()
-# plt.savefig(s+".png")
-# print("Saved with width "+str(W))
-# plt.show()
-# plt.clf()
-
-# # Eigenvalue Histogram
-# ########################################### ADJUST HERE
-# ACTIVATION = stax.Relu
-# WIDTHS = [100, 500, 1000, 1500]
-# DEPTH = 4
-# SEED_LIST = [32,43,50,0]
-# SURFACE_POINTS = 50
-# OUT_DIM=20
-# ###########################################
-
-# for W in WIDTHS:
-#   lambdas_W=[]
-#   print(f"Starting width={W}")
-#   for SEED in SEED_LIST:
-#     mod = create_model(W,DEPTH,SEED,OUT_DIM,ACTIVATION)
-#     lambdas = get_NTK_eigenvalues(mod,input(gamma=0),input(gamma=1),width=W,seed=SEED,act="Relu") # can change gammas for input
-#     lambdas_W.append(lambdas)
-#   lambdas_W=np.concatenate(lambdas,axis=0).squeeze() # remove extra dimension
-#   s = "img/Act_"+ACTIVATION.__name__
-#   plt.hist(lambdas_W,label=f"Width={W}")
-#   plt.title(f"Depth={DEPTH}, Output dimension={OUT_DIM}")
-#   plt.legend()
-#   plt.savefig(s+"_eigen.png")
-
-# # Before and after training
-# # Will need to be updated after we have a training function
-# #############
-# # Change parameters here
-# seeds = [10, 32, 43, 56]
-# num_epochs=10
-# activation=stax.Relu
-# width=100
-# depth=4
-# out_dim=2
-# learning_rate=1e-5 # loss does not decrease when I set this too high
-# weight_decay=0
-# desired_out = lambda gamma: np.array([np.cos(gamma)*np.sin(gamma), # Using (x_1*x_2,(x_1*x_2)^2) as a simple example, can be changed
-#                                           np.square(np.cos(gamma)*np.sin(gamma))])
-# loss = nn.MSELoss(reduction='mean')
-# ###############
-
-# for seed in seeds:
-#   print(f"Using seed: {seed}")
-#   model = create_model(width, depth, seed,out_dim, activation)
-#   optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay) # can try with weight decay later
-#   lambdas,NTK = get_NTK_eigenvalues(model,input(0),input(1),return_NTK=True)
-#   print(f"NTK before training: {NTK}")
-#   model = train_model(model,optimizer,loss,desired_out,10,seed,device,print_loss=False)
-#   lambdas,NTK = get_NTK_eigenvalues(model,input(0),input(1),device,return_NTK=True)
-#   print(f"NTK after training: {NTK}")
-
-"""# Experiment Results
-
-NTK surface experiments:
-"""
-
-# # Surface plots
-# ########################################### ADJUST HERE
-# ACTIVATION = stax.Relu
-# WIDTHS = [100, 500, 1000, 1500]
-# DEPTH = 4
-# SEED = 32
-# SURFACE_POINTS = 50
-# ###########################################
-
-# for W in WIDTHS:
-#     mod = create_model(W, DEPTH, SEED, 1, ACTIVATION) # use output_dim=1 for surface plots
-#     X, Y, Z = doNTK_surface(mod, SURFACE_POINTS)
-#     fig = plt.figure()
-#     ax = fig.add_subplot(111, projection='3d')
-#     surf = ax.plot_surface(X, Y, Z, cmap='viridis')
-#     s = "img/width_"+str(W)+"_Act_"+ACTIVATION.__name__
-#     plt.savefig(s+"_surface.png")
-#     plt.show()
-#     plt.clf()
-
-# # Surface plots
-# ########################################### ADJUST HERE
-# ACTIVATION = stax.Gabor
-# WIDTHS = [100, 500, 1000, 1500]
-# DEPTH = 4
-# SEED = 32
-# SURFACE_POINTS = 50
-# ###########################################
-
-# for W in WIDTHS:
-#     mod = create_model(W, DEPTH, SEED, 1, ACTIVATION) # use output_dim=1 for surface plots
-#     X, Y, Z = doNTK_surface(mod, SURFACE_POINTS)
-#     fig = plt.figure()
-#     ax = fig.add_subplot(111, projection='3d')
-#     surf = ax.plot_surface(X, Y, Z, cmap='viridis')
-#     s = "img/width_"+str(W)+"_Act_"+ACTIVATION.__name__
-#     plt.savefig(s+"_surface.png")
-#     plt.show()
-#     plt.clf()
-
-# """NTK 2D Plot Varying Seed experiments:"""
-
-# # NTK 2D Plot Varying Seed
-# ########################################### ADJUST HERE
-# ACTIVATION = stax.Relu
-# WIDTHS = [100,1000,2000]
-# WIDTH_COLORS=['b','g','y','c'] # list of colors to show different widths on the same plot, need len(colors)>=len(widths)
-# DEPTH = 4
-# SEED_LIST = [10,32,5]
-# SURFACE_POINTS = 50
-# ###########################################
-
-# for i in range(len(WIDTHS)):
-#   W = WIDTHS[i]
-#   color=WIDTH_COLORS[i]
-#   for seed in SEED_LIST:
-#     model = create_model(W, DEPTH, seed, 1, ACTIVATION) # use output_dim=1 for surface plots
-#     gap = 2.0 / SURFACE_POINTS
-#     X, Y = doNTK(model, gap)
-#     bY = [Y[n].item() for n in range(len(Y))]
-#     if seed==SEED_LIST[0]:
-#       plt.plot(X, bY,label=f"Width={W}",color=color)
-#     else:
-#       plt.plot(X, bY,color=color)
-
-# # plot infinite width, takes extra time but is interesting result
-# k_fn=create_infinite_width_kernel(DEPTH,ACTIVATION)
-# gammas = np.arange(-1*np.pi, np.pi, 0.05)
-# ntks=[k_fn(input(0),input(gamma),'ntk') for gamma in gammas]
-# ntks=np.stack(ntks).squeeze()
-# plt.plot(gammas,ntks,label="Infinite width",color='black',linewidth=3)
-
-# s=f"img/{str(ACTIVATION.__name__)}_2d_plot"
-# plt.xlabel("gamma")
-# plt.ylabel("NTK")
-# plt.legend()
-# plt.savefig(s+".png")
-# print("Saved with width "+str(W))
-# plt.show()
-# plt.clf()
-
-# # NTK 2D Plot Varying Seed
-# ########################################### ADJUST HERE
-# ACTIVATION = stax.Gabor
-# WIDTHS = [100,1000,2000]
-# WIDTH_COLORS=['b','g','y','c'] # list of colors to show different widths on the same plot, need len(colors)>=len(widths)
-# DEPTH = 4
-# SEED_LIST = [10,32,0]
-# SURFACE_POINTS = 50
-# ###########################################
-
-# for i in range(len(WIDTHS)):
-#   W = WIDTHS[i]
-#   color=WIDTH_COLORS[i]
-#   for seed in SEED_LIST:
-#     model = create_model(W, DEPTH, seed, 1, ACTIVATION) # use output_dim=1 for surface plots
-#     gap = 2.0 / SURFACE_POINTS
-#     X, Y = doNTK(model, gap)
-#     bY = [Y[n].item() for n in range(len(Y))]
-#     if seed==SEED_LIST[0]:
-#       plt.plot(X, bY,label=f"Width={W}",color=color)
-#     else:
-#       plt.plot(X, bY,color=color)
-
-# # plot infinite width, takes extra time but is interesting result
-# k_fn=create_infinite_width_kernel(DEPTH,ACTIVATION)
-# gammas = np.arange(-1*np.pi, np.pi, 0.05)
-# ntks=[k_fn(input(0),input(gamma),'ntk') for gamma in gammas]
-# ntks=np.stack(ntks).squeeze()
-# plt.plot(gammas,ntks,label="Infinite width",color='black',linewidth=3)
-
-# s=f"img/{str(ACTIVATION.__name__)}_2d_plot"
-# plt.xlabel("gamma")
-# plt.ylabel("NTK")
-# plt.legend()
-# plt.savefig(s+".png")
-# print("Saved with width "+str(W))
-# plt.show()
-# plt.clf()
-
-# """Eigenvalue histograms:"""
-
-# # Eigenvalue Histogram
-# ########################################### ADJUST HERE
-# ACTIVATION = stax.Relu
-# WIDTHS = [100, 500, 1000, 2000]
-# DEPTH = 4
-# SEED_LIST = [32,43,50,0]
-# SURFACE_POINTS = 50
-# OUT_DIM=20
-# ###########################################
-
-# for W in WIDTHS:
-#   lambdas_W=[]
-#   print(f"Starting width={W}")
-#   for SEED in SEED_LIST:
-#     mod = create_model(W,DEPTH,SEED,OUT_DIM,ACTIVATION)
-#     lambdas = get_NTK_eigenvalues(mod,input(gamma=0),input(gamma=1),width=W,seed=SEED) # can change gammas for input
-#     lambdas_W.append(lambdas)
-#   lambdas_W=np.concatenate(lambdas,axis=0).squeeze() # remove extra dimension
-#   s = "img/Act_"+ACTIVATION.__name__
-#   plt.hist(lambdas_W,label=f"Width={W}")
-#   plt.title(f"Depth={DEPTH}, Output dimension={OUT_DIM}")
-#   plt.legend()
-#   plt.savefig(s+"_eigen.png")
-
-# # Eigenvalue Histogram
-# ########################################### ADJUST HERE
-# ACTIVATION = stax.Gabor
-# WIDTHS = [100, 500, 1000, 2000]
-# DEPTH = 4
-# SEED_LIST = [32,43,50,0]
-# SURFACE_POINTS = 50
-# OUT_DIM=20
-# ###########################################
-
-# for W in WIDTHS:
-#   lambdas_W=[]
-#   print(f"Starting width={W}")
-#   for SEED in SEED_LIST:
-#     mod = create_model(W,DEPTH,SEED,OUT_DIM,ACTIVATION)
-#     lambdas = get_NTK_eigenvalues(mod,input(gamma=0),input(gamma=1),width=W,seed=SEED) # can change gammas for input
-#     lambdas_W.append(lambdas)
-#   lambdas_W=np.concatenate(lambdas,axis=0).squeeze() # remove extra dimension
-#   s = "img/Act_"+ACTIVATION.__name__
-#   plt.hist(lambdas_W,label=f"Width={W}")
-#   plt.title(f"Depth={DEPTH}, Output dimension={OUT_DIM}")
-#   plt.legend()
-#   plt.savefig(s+"_eigen.png")
-
-# # Before and after training
-# #############
-# Change parameters here
-seeds = [10, 32, 43, 56]
-num_epochs=10
-activation= stax.Relu
-width=100
-depth=4
-out_dim=2
-
-x, y = create_train_data(2, 2, 200, (0.0, 1.0), (0.0, 4.0))
-# ###############
-
-for seed in seeds:
-  print(f"Using seed: {seed}")
-  model = create_model(width, depth, seed,out_dim, activation)
-  lambdas,NTK = get_NTK_eigenvalues(model, input(0), input(1), device)
-  print(f"NTK before training: {NTK}")
-  model = train_model(model, num_epochs, x, y)
-  
-  lambdas,NTK = get_NTK_eigenvalues(model,input(0),input(1),device)
-  print(f"NTK after training: {NTK}")
-
-# # Before and after training
-# #############
-# # Change parameters here
-# seeds = [10, 32, 43, 56]
-# num_epochs=10
-# activation=stax.Relu
-# width=100
-# depth=4
-# out_dim=2
-# learning_rate=1e-5 # loss does not decrease when I set this too high
-# weight_decay=0.1
-# desired_out = lambda gamma: np.array([np.cos(gamma)*np.sin(gamma), # Using (x_1*x_2,(x_1*x_2)^2) as a simple example, can be changed
-#                                           np.square(np.cos(gamma)*np.sin(gamma))])
-# ##############
-
-# for seed in seeds:
-#   print(f"Using seed: {seed}")
-#   model = create_model(width, depth, seed,out_dim, activation)
-#   optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay) # can try with weight decay later
-#   lambdas,NTK = get_NTK_eigenvalues(model,input(0),input(1),return_NTK=True)
-#   print(f"NTK before training: {NTK}")
-#   model = train_model(model,optimizer,loss,desired_out,10,seed,device,print_loss=False)
-#   lambdas,NTK = get_NTK_eigenvalues(model,input(0),input(1),device,return_NTK=True)
-#   print(f"NTK after training: {NTK}")
+import sys
+import json
+with open(sys.argv[1]) as f:
+  cfg = json.load(f)
+  part1(cfg, 50)
+  part2(cfg, 50)
+  part3(cfg, 50)
