@@ -2,7 +2,7 @@
     "part1" : {
         "enable": true,
         "POINTS" : 50,
-        "ACTIVATIONS" : ["relu", "rbf"],
+        "ACTIVATIONS" : ["relu"],
         "COLORS" : ["red", "blue"],
         "WIDTHS" : [100, 500],
         "DEPTHS" : [2, 4],
@@ -11,10 +11,15 @@
     },
     "part2": {
         "enable" : false
-        // Some other stuff
+        
     },
     "part3" : {
-        "enable" : false
-        // EVEN MORE STUFF
+        "enable": true,
+        "ACTIVATIONS" : ["relu", "rbf", "gabor"],
+        "COLORS" : ["red", "blue"],
+        "WIDTHS" : [100, 500],
+        "DEPTHS" : [4],
+        "SEED_LIST" : [10, 32, 5],
+        "OUT_DIMS" : [10, 20]
     }   
 }

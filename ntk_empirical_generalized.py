@@ -195,6 +195,7 @@ def part1(config):
   SEED_LIST = vals['SEED_LIST']
   SURFACE_POINTS = vals["POINTS"]
   OUT_DIM = vals['OUT_DIM']
+
   for ACTIVATION_NAME in ACTIVATIONS:
     ACTIVATION = act(ACTIVATION_NAME)
     for DEPTH in DEPTHS:
@@ -215,32 +216,56 @@ def part1(config):
       ntks = np.stack(ntks).squeeze()
       plt.plot(gammas,ntks,label="Infinite width",color='black',linewidth=3)
 
-      s=f"img/{str(ACTIVATION.__name__)}_plot_depth{DEPTH}"
+      s=f"img/p1_{str(ACTIVATION.__name__)}_plot_depth{DEPTH}"
       plt.xlabel("gamma")
       plt.ylabel("NTK")
       plt.legend()
       plt.savefig(s+".png")
       print("Saved with width "+str(WIDTH))
-      plt.show()
       plt.clf()
 
-def part2(config, surf_pts):
+def part2(config):
   vals = config["part2"]
   if (vals["enable"]):
     return
   pass
 
-def part3(config, surf_pts):
+def part3(config):
   vals = config["part3"]
-  if (vals["enable"]):
+  if (not vals["enable"]):
     return
-  pass
+  ACTIVATION_NAMES = vals["ACTIVATIONS"]
+  WIDTHS = vals['WIDTHS']
+  DEPTHS = vals['DEPTHS']
+  SEEDS = vals['SEED_LIST']
+  OUT_DIMS = vals['OUT_DIMS']
+
+  for ACTIVATION_NAME in ACTIVATION_NAMES:
+    ACTIVATION = act(ACTIVATION_NAME)
+    for OUT_DIM in OUT_DIMS:
+      for DEPTH in DEPTHS:
+        for WIDTH in WIDTHS:
+          lambdas_W=[]
+          print(f"Starting width={WIDTH}")
+          for SEED in SEEDS:
+            mod = create_model(WIDTH, DEPTH, SEED, OUT_DIM, ACTIVATION)
+            lambdas, ntk = get_NTK_eigenvalues(mod,input(gamma=0),input(gamma=1)) # can change gammas for input
+            print(lambdas)
+            lambdas_W.append(lambdas)
+          lambdas_W=np.concatenate(lambdas,axis=0).squeeze() # remove extra dimension          
+          plt.hist(lambdas_W,label=f"Width={WIDTH}")
+        s = f"img/p3_Act_{ACTIVATION.__name__}_depth_{DEPTH}_outdim_{OUT_DIM}"
+        plt.title(f"Depth={DEPTH}, Output dimension={OUT_DIM}, Activation={ACTIVATION_NAME}")
+        plt.legend()
+        plt.savefig(s+"_eigen.png")
+        plt.clf()
+        
 
 
 import sys
 import json
 with open(sys.argv[1]) as f:
   cfg = json.load(f)
-  part1(cfg, 50)
-  part2(cfg, 50)
-  part3(cfg, 50)
+  part1(cfg)
+  part2(cfg)
+  part3(cfg)
