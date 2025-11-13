@@ -72,7 +72,7 @@ def create_infinite_width_kernel(depth,activation, seed, parameterization='ntk')
   for i in range(depth-1):
     layer_list.append(stax.Dense(1,parameterization=parameterization)) # width does not matter for infinite width
     layer_list.append(activation())
-  layer_list.append(stax.Dense(1,parameterization=parameterization))
+  layer_list.append(stax.Dense(4,parameterization=parameterization))
   _, _, kernel_fn = stax.serial(*layer_list)
   return kernel_fn
 
@@ -97,12 +97,13 @@ def train_model(model, epochs, x_train, y_train, batch_size=100):
 
   def CEloss(params, batch):
     inputs, targets = batch
+    # print(inputs.shape)
     logits = model_fwd(params, inputs)
     log_probs = log_softmax(logits)
     return -jnp.mean(jnp.sum(targets * log_probs, axis=1))  # cross-entropy
 
   def update(step, params, batch, lr=0.001):
-   
+
     grads = grad(CEloss)(params, batch)
     return opt_update(step, grads, opt_state)
   
@@ -112,7 +113,7 @@ def train_model(model, epochs, x_train, y_train, batch_size=100):
   nBatches = len(x_train) // batch_size
 
   for epoch in range(epochs):
-      print("Epoch ", epoch)
+      # print("Epoch ", epoch)
       for i in range(nBatches):
           ll = i * batch_size
           hl = ll + batch_size
@@ -224,11 +225,73 @@ def part1(config):
       print("Saved with width "+str(WIDTH))
       plt.clf()
 
+
+def plothist(vals, bins):
+  histy, binedges = np.histogram(vals, bins = bins)
+  binsx = [(binedges[i + 1] + binedges[i]) * 0.5 for i in range(len(binedges) - 1)]
+  plt.plot(binsx, histy)
+  # plt.xticks(binedges)
+
 def part2(config):
   vals = config["part2"]
-  if (vals["enable"]):
+  if (not vals["enable"]):
     return
+  ACTIVATION_NAMES = vals["ACTIVATIONS"]
+  WIDTHS = vals['WIDTHS']
+  DEPTHS = vals['DEPTHS']
+  SEEDS = vals['SEED_LIST']
+  OUT_DIMS = vals['OUT_DIMS']
+  EPOCHS = vals["EPOCHS"]
+  NUM_TRAINING_POINTS = vals["TRAINING_POINTS"]
+  
+  for ACTIVATION_NAME in ACTIVATION_NAMES:
+    ACTIVATION = act(ACTIVATION_NAME)
+    for OUT_DIM in OUT_DIMS:
+      for DEPTH in DEPTHS:
+        for WIDTH in WIDTHS:
+          lambdas_w1 = []
+          lambdas_w2 = []
+          print("depth = ", DEPTH, "width = ", WIDTH)
+          for SEED in SEEDS:
+            print("seed = ", SEED)
+            model = create_model(WIDTH, DEPTH, SEED, OUT_DIM, ACTIVATION)
+            lambdas_pre, NTK_PRE = get_NTK_eigenvalues(model, input(0.0), input(1.0))
+            lambdas_w1.append(lambdas_pre)
+            x, y = create_train_data(2, OUT_DIM, 100, (-1.0, 1.0), (-2.0, 2.0))
+            
+            model = train_model(model, 10, x, y, batch_size = 50)
+            del x
+            del y
+            lambdas_post, NTK_POST = get_NTK_eigenvalues(model, input(0.0), input(1.0))
+            lambdas_w2.append(lambdas_post)
+            for item in [*model]:
+              del item #            del model[1]
+
+          lambdas_w1 = np.concatenate(lambdas_w1).flatten()
+          lambdas_w2 = np.concatenate(lambdas_w2).flatten()
+          # print(lambdas_w1)
+          # print(lambdas_w2)
+          plt.subplot(2, 1, 1)
+          # plothist(lambdas_w1, 10)
+          plt.hist(lambdas_w1,label=f"Width={WIDTH}", bins=10, alpha = 1.0 / len(WIDTHS))
+          plt.subplot(2, 1, 2)
+          plt.hist(lambdas_w2,label=f"Width={WIDTH}", bins=10, alpha = 1.0 / len(WIDTHS))
+          # plothist(lambdas_w2, 10)
+          
+        s = f"img/p2_Act_{ACTIVATION.__name__}_depth_{DEPTH}_outdim_{OUT_DIM}"
+        plt.suptitle(f"Depth={DEPTH}, Output dimension={OUT_DIM}, Activation={ACTIVATION_NAME}")
+        plt.subplot(2, 1, 1)
+        plt.legend()
+        plt.subplot(2, 1, 2)
+        plt.legend()
+        plt.savefig(s+"_eigen.png")
+        plt.clf()
+          
+
+          
+          
   pass
+
 
 def part3(config):
   vals = config["part3"]
@@ -239,7 +302,8 @@ def part3(config):
   DEPTHS = vals['DEPTHS']
   SEEDS = vals['SEED_LIST']
   OUT_DIMS = vals['OUT_DIMS']
-
+  POINTS = 10
+  spacing = 0.2
   for ACTIVATION_NAME in ACTIVATION_NAMES:
     ACTIVATION = act(ACTIVATION_NAME)
     for OUT_DIM in OUT_DIMS:
@@ -249,11 +313,15 @@ def part3(config):
           print(f"Starting width={WIDTH}")
           for SEED in SEEDS:
             mod = create_model(WIDTH, DEPTH, SEED, OUT_DIM, ACTIVATION)
-            lambdas, ntk = get_NTK_eigenvalues(mod,input(gamma=0),input(gamma=1)) # can change gammas for input
-            print(lambdas)
+            # print(lambdas_inf)
+            # for n in range(POINTS):
+            theta = 1 #(-1 + spacing * n)*(3.14159)
+            lambdas, ntk = get_NTK_eigenvalues(mod,input(gamma=0),input(gamma=theta))
+            
             lambdas_W.append(lambdas)
-          lambdas_W=np.concatenate(lambdas,axis=0).squeeze() # remove extra dimension          
-          plt.hist(lambdas_W,label=f"Width={WIDTH}")
+
+          lambdas_W = np.concatenate(lambdas_W).flatten()
+          plt.hist(lambdas_W,label=f"Width={WIDTH}", bins=20)
         s = f"img/p3_Act_{ACTIVATION.__name__}_depth_{DEPTH}_outdim_{OUT_DIM}"
         plt.title(f"Depth={DEPTH}, Output dimension={OUT_DIM}, Activation={ACTIVATION_NAME}")
         plt.legend()
