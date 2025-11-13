@@ -259,7 +259,7 @@ def part2(config):
             lambdas_w1.append(lambdas_pre)
             x, y = create_train_data(2, OUT_DIM, 100, (-1.0, 1.0), (-2.0, 2.0))
             
-            model = train_model(model, 10, x, y, batch_size = 50)
+            model = train_model(model, EPOCHS, x, y, batch_size = 50)
             del x
             del y
             lambdas_post, NTK_POST = get_NTK_eigenvalues(model, input(0.0), input(1.0))
