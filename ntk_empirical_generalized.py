@@ -257,7 +257,7 @@ def part2(config):
             model = create_model(WIDTH, DEPTH, SEED, OUT_DIM, ACTIVATION)
             lambdas_pre, NTK_PRE = get_NTK_eigenvalues(model, input(0.0), input(1.0))
             lambdas_w1.append(lambdas_pre)
-            x, y = create_train_data(2, OUT_DIM, TRAINING_POINTS, (-1.0, 1.0), (-2.0, 2.0))
+            x, y = create_train_data(2, OUT_DIM, NUM_TRAINING_POINTS, (-1.0, 1.0), (-2.0, 2.0))
             model = train_model(model, EPOCHS, x, y, batch_size = 50)
             del x
             del y

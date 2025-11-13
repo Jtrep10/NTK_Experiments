@@ -1,6 +1,6 @@
 {
     "part1" : {
-        "enable": true,
+        "enable": false,
         "POINTS" : 50,
         "ACTIVATIONS" : ["relu","rfb","gabor"],
         "COLORS" : ["red", "blue","green","purple","cyan"],
@@ -10,9 +10,9 @@
         "OUT_DIM" : 1
     },
     "part2": {
-        "enable" : false,
+        "enable" : true,
         "EPOCHS" : 20,
-        "TRAINING_POINTS" : 200,
+        "TRAINING_POINTS" : 100,
         "ACTIVATIONS" : ["relu"],
         "COLORS" : ["red", "blue","green","purple","cyan"],
         "WIDTHS" : [100, 500,1000,1500,2000],
@@ -25,7 +25,7 @@
 
     },
     "part3" : {
-        "enable": true,
+        "enable": false,
         "ACTIVATIONS" : ["relu", "rbf", "gabor"],
         "COLORS" : ["red", "blue","green","purple","cyan"],
         "WIDTHS" : [100, 500,1000,1500,2000],
