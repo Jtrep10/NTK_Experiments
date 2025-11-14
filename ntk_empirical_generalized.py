@@ -43,6 +43,27 @@ def input(gamma:float)->np.array:
   return x.reshape(1,-1)
 
 
+def DropConnect(width, rate, param):
+   
+    dense_init, dense_apply, kernel_fun = stax.Dense(width, parameterization = param)
+
+    def init_fun(rng, input_shape):
+        return dense_init(rng, input_shape)
+
+    def apply_fun(params, inputs, rng=None, mode='train'):
+        W, b = params
+        if mode == 'train' and rng is not None:
+            keep_prob = 1.0 - rate
+            mask = random.bernoulli(rng, p=keep_prob, shape=W.shape)
+            masked_W = W * mask / keep_prob
+            masked_params = (masked_W, b)
+        else:
+            masked_params = params
+        return dense_apply(masked_params, inputs)
+
+    return init_fun, apply_fun, kernel_fun
+
+
 def create_model(width, depth, seed, out_dim,activation,parameterization='ntk'):
   # parameterization should be 'ntk' or 'standard'
   # see here for parameterization documentation
@@ -50,9 +71,10 @@ def create_model(width, depth, seed, out_dim,activation,parameterization='ntk'):
   random.seed(seed)
   layer_list=[]
   for i in range(depth-1):
-    layer_list.append(stax.Dense(width,parameterization=parameterization))
+    layer_list.append(DropConnect(width, 0.0, parameterization))
+    # layer_list.append(stax.Dense(width,parameterization=parameterization))
     layer_list.append(activation())
-  layer_list.append(stax.Dense(out_dim,parameterization=parameterization))
+  layer_list.append(DropConnect(out_dim, 0.0, parameterization))
   init_fn, apply_fn, _ = stax.serial(*layer_list)
   model = dict(
       f=apply_fn,
@@ -95,17 +117,17 @@ def train_model(model, epochs, x_train, y_train, batch_size=100):
   opt_init, opt_update, get_params = optimizers.adam(step_size=1e-3)
   opt_state = opt_init(params)
 
-  def CEloss(params, batch):
+  def MSEloss(params, batch):
     inputs, targets = batch
     # print(inputs.shape)
     logits = model_fwd(params, inputs)
-    log_probs = log_softmax(logits)
-    return -jnp.mean(jnp.sum(targets * log_probs, axis=1))  # cross-entropy
+    return jnp.mean(jnp.square(logits - targets))
+    
 
   def update(step, params, batch, lr=0.001):
-
-    grads = grad(CEloss)(params, batch)
-    return opt_update(step, grads, opt_state)
+    loss = MSEloss(params, batch)
+    grads = grad(MSEloss)(params, batch)
+    return opt_update(step, grads, opt_state), loss
   
   # 6. Training loop
   stepnum = 0
@@ -118,7 +140,8 @@ def train_model(model, epochs, x_train, y_train, batch_size=100):
           ll = i * batch_size
           hl = ll + batch_size
           batch = (x_train[ll:hl], y_train[ll:hl])
-          opt_state = update(epoch * nBatches + i, params, batch)
+          opt_state, loss = update(epoch * nBatches + i, params, batch)
+          print(loss)
           params = get_params(opt_state)
           stepnum += 1
 
@@ -243,10 +266,11 @@ def part2(config):
   OUT_DIMS = vals['OUT_DIMS']
   EPOCHS = vals["EPOCHS"]
   NUM_TRAINING_POINTS = vals["TRAINING_POINTS"]
-  
+
   for ACTIVATION_NAME in ACTIVATION_NAMES:
     ACTIVATION = act(ACTIVATION_NAME)
     for OUT_DIM in OUT_DIMS:
+      x, y = create_train_data(2, OUT_DIM, 100, (-1.0, 1.0), (-2.0, 2.0))
       for DEPTH in DEPTHS:
         for WIDTH in WIDTHS:
           lambdas_w1 = []
@@ -257,10 +281,9 @@ def part2(config):
             model = create_model(WIDTH, DEPTH, SEED, OUT_DIM, ACTIVATION)
             lambdas_pre, NTK_PRE = get_NTK_eigenvalues(model, input(0.0), input(1.0))
             lambdas_w1.append(lambdas_pre)
-            x, y = create_train_data(2, OUT_DIM, NUM_TRAINING_POINTS, (-1.0, 1.0), (-2.0, 2.0))
+            
             model = train_model(model, EPOCHS, x, y, batch_size = 50)
-            del x
-            del y
+           
             lambdas_post, NTK_POST = get_NTK_eigenvalues(model, input(0.0), input(1.0))
             lambdas_w2.append(lambdas_post)
             for item in [*model]:
@@ -268,15 +291,19 @@ def part2(config):
 
           lambdas_w1 = np.concatenate(lambdas_w1).flatten()
           lambdas_w2 = np.concatenate(lambdas_w2).flatten()
+          xl = min(min(lambdas_w2), min(lambdas_w1))
+          xh = max(max(lambdas_w2), max(lambdas_w1))
           # print(lambdas_w1)
           # print(lambdas_w2)
           plt.subplot(2, 1, 1)
           # plothist(lambdas_w1, 10)
+          plt.xlim([xl, xh])
           plt.hist(lambdas_w1,label=f"Width={WIDTH}", bins=10, alpha = 1.0 / len(WIDTHS))
           plt.subplot(2, 1, 2)
+          plt.xlim([xl, xh])
           plt.hist(lambdas_w2,label=f"Width={WIDTH}", bins=10, alpha = 1.0 / len(WIDTHS))
           # plothist(lambdas_w2, 10)
-          
+        
         s = f"img/p2_Act_{ACTIVATION.__name__}_depth_{DEPTH}_outdim_{OUT_DIM}"
         plt.suptitle(f"Depth={DEPTH}, Output dimension={OUT_DIM}, Activation={ACTIVATION_NAME}")
         plt.subplot(2, 1, 1)
@@ -285,6 +312,8 @@ def part2(config):
         plt.legend()
         plt.savefig(s+"_eigen.png")
         plt.clf()
+      del x
+      del y
           
 
           
