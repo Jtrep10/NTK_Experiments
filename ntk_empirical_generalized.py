@@ -42,6 +42,7 @@ def input(gamma:float)->np.array:
   x=np.array([np.cos(gamma),np.sin(gamma)])
   return x.reshape(1,-1)
 
+from jax.random import bernoulli
 
 def DropConnect(width, rate, param):
    
@@ -54,7 +55,7 @@ def DropConnect(width, rate, param):
         W, b = params
         if mode == 'train' and rng is not None:
             keep_prob = 1.0 - rate
-            mask = random.bernoulli(rng, p=keep_prob, shape=W.shape)
+            mask = bernoulli(rng, p=keep_prob, shape=W.shape)
             masked_W = W * mask / keep_prob
             masked_params = (masked_W, b)
         else:
@@ -63,18 +64,29 @@ def DropConnect(width, rate, param):
 
     return init_fun, apply_fun, kernel_fun
 
-
-def create_model(width, depth, seed, out_dim,activation,parameterization='ntk'):
+def LayerVariantStack(width, activation, variant='dense'):
+  if (variant == 'dense'):
+    return [stax.Dense(width, parameterization = 'ntk'), activation()]
+  elif (variant == 'dropout'):
+    return [stax.Dense(width, parameterization = 'ntk'), activation(), stax.Dropout(rate = 0.1, mode = 'train')]
+  elif (variant == 'dropconnect'):
+    return [DropConnect(width, 0.1, 'ntk'), activation()]
+  
+def create_model(width, depth, seed, out_dim,activation,parameterization='ntk', variant = 'dense'):
   # parameterization should be 'ntk' or 'standard'
   # see here for parameterization documentation
   # https://neural-tangents.readthedocs.io/en/latest/_autosummary/neural_tangents.stax.Dense.html
   random.seed(seed)
   layer_list=[]
   for i in range(depth-1):
-    layer_list.append(DropConnect(width, 0.0, parameterization))
-    # layer_list.append(stax.Dense(width,parameterization=parameterization))
-    layer_list.append(activation())
-  layer_list.append(DropConnect(out_dim, 0.0, parameterization))
+    layer_list += LayerVariantStack(width, activation, variant)
+  
+  if (variant == 'dense' or variant == 'dropout'):
+    layer_list.append(stax.Dense(out_dim, parameterization = 'ntk'))
+  elif (variant == 'dropconnect'):
+    layer_list.append(DropConnect(out_dim, 0.1, 'ntk'))
+  
+  # layer_list.append(DropConnect(out_dim, 0.7, parameterization))
   init_fn, apply_fn, _ = stax.serial(*layer_list)
   model = dict(
       f=apply_fn,
@@ -102,8 +114,16 @@ def create_infinite_width_kernel(depth,activation, seed, parameterization='ntk')
 
 def create_train_data(in_dim : int, out_dim : int, num_samples : int, input_range:tuple, output_range:tuple):
   import random
-  tx = jnp.array([[random.uniform(input_range[0], input_range[1]) for i in range(in_dim)] for n in range(num_samples)])
-  ty = jnp.array([[random.uniform(output_range[0], output_range[1]) for j in range(out_dim)] for n in range(num_samples)])
+  if in_dim == 1:
+    tx = jnp.array([random.uniform(input_range[0], input_range[1]) for n in range(num_samples)])
+  else:
+    tx = jnp.array([[random.uniform(input_range[0], input_range[1]) for i in range(in_dim)] for n in range(num_samples)])
+  
+  if out_dim == 1:
+    ty = jnp.array([random.uniform(output_range[0], output_range[1]) for n in range(num_samples)])
+  else:
+    ty = jnp.array([[random.uniform(output_range[0], output_range[1]) for j in range(out_dim)] for n in range(num_samples)])
+ 
   return tx, ty
   
 def train_model(model, epochs, x_train, y_train, batch_size=100):
@@ -120,7 +140,7 @@ def train_model(model, epochs, x_train, y_train, batch_size=100):
   def MSEloss(params, batch):
     inputs, targets = batch
     # print(inputs.shape)
-    logits = model_fwd(params, inputs)
+    logits = model_fwd(params, inputs, rng = jax.random.PRNGKey(1))
     return jnp.mean(jnp.square(logits - targets))
     
 
@@ -168,7 +188,7 @@ def doNTK(model_args, gamma_spacing:float=0.01):
 
   ntvp = jit(nt.empirical_ntk_fn(
     **kwargs, implementation=nt.NtkImplementation.NTK_VECTOR_PRODUCTS))
-  NTK_arr = ntvp(input(0.0),inputs,params)
+  NTK_arr = ntvp(input(0.0),inputs,params, rng = jax.random.PRNGKey(1))
 
   return gammas, NTK_arr.squeeze()
 
@@ -266,55 +286,43 @@ def part2(config):
   OUT_DIMS = vals['OUT_DIMS']
   EPOCHS = vals["EPOCHS"]
   NUM_TRAINING_POINTS = vals["TRAINING_POINTS"]
+  SURFACE_POINTS = vals["SURFACE_POINTS"]
+  gap = 2.0 / SURFACE_POINTS
+  COLORS = vals["COLORS"]
+  VARIANTS = vals['VARIANTS']
+  for VARIANT in VARIANTS:
+    for ACTIVATION_NAME in ACTIVATION_NAMES:
+      ACTIVATION = act(ACTIVATION_NAME)
+      for OUT_DIM in OUT_DIMS:
+        x, y = create_train_data(2, OUT_DIM, NUM_TRAINING_POINTS, (-1.0, 1.0), (-2.0, 2.0))
+        for DEPTH in DEPTHS:
+          for i, WIDTH in enumerate(WIDTHS):
+            for SEED in SEEDS:
+              model = create_model(WIDTH, DEPTH, SEED, OUT_DIM, ACTIVATION, parameterization = 'ntk', variant = VARIANT)
+              Xpre, Ypre = doNTK(model, gap) 
+              bYpre = [Ypre[n].item() for n in range(len(Ypre))]
+              model = train_model(model, EPOCHS, x, y, batch_size = 50)
+              Xpost, Ypost = doNTK(model, gap)
+              bYpost = [Ypost[n].item() for n in range(len(Ypost))]
+              if SEED == SEEDS[0]:
+                plt.plot(Xpre, bYpre,label=f"Width={WIDTH}, Pre Training", linestyle='dotted', color = COLORS[i])
+                plt.plot(Xpost, bYpost,label=f"Width={WIDTH}, Post Training", color = COLORS[i])
+              else:
+                plt.plot(Xpre, bYpre, linestyle='dotted', color = COLORS[i])
+                plt.plot(Xpost, bYpost, color = COLORS[i])
 
-  for ACTIVATION_NAME in ACTIVATION_NAMES:
-    ACTIVATION = act(ACTIVATION_NAME)
-    for OUT_DIM in OUT_DIMS:
-      x, y = create_train_data(2, OUT_DIM, 100, (-1.0, 1.0), (-2.0, 2.0))
-      for DEPTH in DEPTHS:
-        for WIDTH in WIDTHS:
-          lambdas_w1 = []
-          lambdas_w2 = []
-          print("depth = ", DEPTH, "width = ", WIDTH)
-          for SEED in SEEDS:
-            print("seed = ", SEED)
-            model = create_model(WIDTH, DEPTH, SEED, OUT_DIM, ACTIVATION)
-            lambdas_pre, NTK_PRE = get_NTK_eigenvalues(model, input(0.0), input(1.0))
-            lambdas_w1.append(lambdas_pre)
-            
-            model = train_model(model, EPOCHS, x, y, batch_size = 50)
-           
-            lambdas_post, NTK_POST = get_NTK_eigenvalues(model, input(0.0), input(1.0))
-            lambdas_w2.append(lambdas_post)
-            for item in [*model]:
-              del item #            del model[1]
-
-          lambdas_w1 = np.concatenate(lambdas_w1).flatten()
-          lambdas_w2 = np.concatenate(lambdas_w2).flatten()
-          xl = min(min(lambdas_w2), min(lambdas_w1))
-          xh = max(max(lambdas_w2), max(lambdas_w1))
-          # print(lambdas_w1)
-          # print(lambdas_w2)
-          plt.subplot(2, 1, 1)
-          # plothist(lambdas_w1, 10)
-          plt.xlim([xl, xh])
-          plt.hist(lambdas_w1,label=f"Width={WIDTH}", bins=10, alpha = 1.0 / len(WIDTHS))
-          plt.subplot(2, 1, 2)
-          plt.xlim([xl, xh])
-          plt.hist(lambdas_w2,label=f"Width={WIDTH}", bins=10, alpha = 1.0 / len(WIDTHS))
-          # plothist(lambdas_w2, 10)
-        
-        s = f"img/p2_Act_{ACTIVATION.__name__}_depth_{DEPTH}_outdim_{OUT_DIM}"
-        plt.suptitle(f"Depth={DEPTH}, Output dimension={OUT_DIM}, Activation={ACTIVATION_NAME}")
-        plt.subplot(2, 1, 1)
-        plt.legend()
-        plt.subplot(2, 1, 2)
-        plt.legend()
-        plt.savefig(s+"_eigen.png")
-        plt.clf()
-      del x
-      del y
-          
+              for item in [*model]:
+                del item #      
+          s=f"img/p2_{str(ACTIVATION.__name__)}_plot_depth{DEPTH}_{VARIANT}"
+          plt.xlabel("gamma")
+          plt.ylabel("NTK")
+          plt.legend()
+          plt.savefig(s+".png")
+          print("Saved with width "+str(WIDTH))
+          plt.clf()
+        del x
+        del y
+      
 
           
           
