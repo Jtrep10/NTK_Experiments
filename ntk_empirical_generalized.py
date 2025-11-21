@@ -215,7 +215,7 @@ def get_NTK_eigenvalues(model_args, input_1, input_2, return_NTK=False):
   # kwargs is optional arguments used only for printing latex table text
   NTK = get_NTK(model_args, input_1, input_2)
   lambdas,_ = np.linalg.eig(NTK)
-  lambdas = np.abs(lambdas)
+  lambdas = np.real(lambdas)
   condition_number = np.max(lambdas)/np.min(lambdas)
   return lambdas, NTK
 
@@ -341,20 +341,25 @@ def part3(config):
   POINTS = 10
   spacing = 0.2
   for ACTIVATION_NAME in ACTIVATION_NAMES:
+    print(f"Starting activation {ACTIVATION_NAME}")
     ACTIVATION = act(ACTIVATION_NAME)
     for OUT_DIM in OUT_DIMS:
       for DEPTH in DEPTHS:
         for WIDTH in WIDTHS:
           lambdas_W=[]
-          print(f"Starting width={WIDTH}")
+          lambdas_min_W=[]
           for SEED in SEEDS:
             mod = create_model(WIDTH, DEPTH, SEED, OUT_DIM, ACTIVATION)
-            # print(lambdas_inf)
-            # for n in range(POINTS):
             theta = 1 #(-1 + spacing * n)*(3.14159)
             lambdas, ntk = get_NTK_eigenvalues(mod,input(gamma=0),input(gamma=theta))
             
             lambdas_W.append(lambdas)
+            lambdas_min_W.append(np.min(lambdas))
+
+          # print for latex table
+          lambdas_mean=round(np.mean(lambdas_min_W)*1e3)/1e3 # workaround for unexpected behavior in np.round()
+          lambdas_std=round(np.std(lambdas_min_W)*1e3)/1e3
+          print(f"{OUT_DIM} & {WIDTH} & {DEPTH} & {lambdas_mean} & {lambdas_std} \\")
 
           lambdas_W = np.concatenate(lambdas_W).flatten()
           plt.hist(lambdas_W,label=f"Width={WIDTH}", bins=20)
