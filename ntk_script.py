@@ -45,21 +45,21 @@ def input(gamma:float)->np.array:
 from jax.random import bernoulli
 
 def DropConnect(width, rate, param):
-   
+    # print("In h")
     dense_init, dense_apply, kernel_fun = stax.Dense(width, parameterization = param)
 
     def init_fun(rng, input_shape):
         return dense_init(rng, input_shape)
 
-    def apply_fun(params, inputs, rng=None, mode='train'):
+    def apply_fun(params, inputs, rng=jax.random.PRNGKey(random.randint(0, 10)), mode='train'):
         W, b = params
-        if mode == 'train' and rng is not None:
-            keep_prob = 1.0 - rate
-            mask = bernoulli(rng, p=keep_prob, shape=W.shape)
-            masked_W = W * mask / keep_prob
-            masked_params = (masked_W, b)
-        else:
-            masked_params = params
+        random.seed()
+        keep_prob = 1.0 - rate
+        mask = bernoulli(rng, p=keep_prob, shape=W.shape)
+        
+        masked_W = W * mask / keep_prob
+        print(masked_W.shape)
+        masked_params = (masked_W, b)
         return dense_apply(masked_params, inputs)
 
     return init_fun, apply_fun, kernel_fun
@@ -126,6 +126,11 @@ def create_train_data(in_dim : int, out_dim : int, num_samples : int, input_rang
  
   return tx, ty
   
+def create_functional_train_data_2to1(num_samples):
+  tx = jnp.array([[random.uniform(-1.0, 1.0) for i in range(2)] for n in range(num_samples)])
+  ty = jnp.array([a[0] * a[1] for a in tx])
+  return tx, ty
+
 def train_model(model, epochs, x_train, y_train, batch_size=100):
   params = model[1]
   model_fwd = model[0]["f"]
@@ -215,7 +220,7 @@ def get_NTK_eigenvalues(model_args, input_1, input_2, return_NTK=False):
   # kwargs is optional arguments used only for printing latex table text
   NTK = get_NTK(model_args, input_1, input_2)
   lambdas,_ = np.linalg.eig(NTK)
-  lambdas = np.real(lambdas)
+  lambdas = np.abs(lambdas)
   condition_number = np.max(lambdas)/np.min(lambdas)
   return lambdas, NTK
 
@@ -263,7 +268,7 @@ def part1(config):
       s=f"img/p1_{str(ACTIVATION.__name__)}_plot_depth{DEPTH}"
       plt.xlabel("gamma")
       plt.ylabel("NTK")
-      plt.legend()
+      plt.legend(fontsize = 'x-small')
       plt.savefig(s+".png")
       print("Saved with width "+str(WIDTH))
       plt.clf()
@@ -294,7 +299,7 @@ def part2(config):
     for ACTIVATION_NAME in ACTIVATION_NAMES:
       ACTIVATION = act(ACTIVATION_NAME)
       for OUT_DIM in OUT_DIMS:
-        x, y = create_train_data(2, OUT_DIM, NUM_TRAINING_POINTS, (-1.0, 1.0), (-2.0, 2.0))
+        x, y = create_functional_train_data_2to1(NUM_TRAINING_POINTS) #create_train_data(2, OUT_DIM, NUM_TRAINING_POINTS, (-1.0, 1.0), (-2.0, 2.0))
         for DEPTH in DEPTHS:
           for i, WIDTH in enumerate(WIDTHS):
             for SEED in SEEDS:
@@ -341,25 +346,20 @@ def part3(config):
   POINTS = 10
   spacing = 0.2
   for ACTIVATION_NAME in ACTIVATION_NAMES:
-    print(f"Starting activation {ACTIVATION_NAME}")
     ACTIVATION = act(ACTIVATION_NAME)
     for OUT_DIM in OUT_DIMS:
       for DEPTH in DEPTHS:
         for WIDTH in WIDTHS:
           lambdas_W=[]
-          lambdas_min_W=[]
+          print(f"Starting width={WIDTH}")
           for SEED in SEEDS:
             mod = create_model(WIDTH, DEPTH, SEED, OUT_DIM, ACTIVATION)
+            # print(lambdas_inf)
+            # for n in range(POINTS):
             theta = 1 #(-1 + spacing * n)*(3.14159)
             lambdas, ntk = get_NTK_eigenvalues(mod,input(gamma=0),input(gamma=theta))
             
             lambdas_W.append(lambdas)
-            lambdas_min_W.append(np.min(lambdas))
-
-          # print for latex table
-          lambdas_mean=round(np.mean(lambdas_min_W)*1e3)/1e3 # workaround for unexpected behavior in np.round()
-          lambdas_std=round(np.std(lambdas_min_W)*1e3)/1e3
-          print(f"{OUT_DIM} & {WIDTH} & {DEPTH} & {lambdas_mean} & {lambdas_std} \\")
 
           lambdas_W = np.concatenate(lambdas_W).flatten()
           plt.hist(lambdas_W,label=f"Width={WIDTH}", bins=20)

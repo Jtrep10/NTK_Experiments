@@ -1,0 +1,4 @@
+jax==0.5.3
+jaxlib==0.5.3
+neural_tangents==0.6.5
+numpy
