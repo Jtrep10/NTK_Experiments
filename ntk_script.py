@@ -220,7 +220,7 @@ def get_NTK_eigenvalues(model_args, input_1, input_2, return_NTK=False):
   # kwargs is optional arguments used only for printing latex table text
   NTK = get_NTK(model_args, input_1, input_2)
   lambdas,_ = np.linalg.eig(NTK)
-  lambdas = np.abs(lambdas)
+  lambdas = np.real(lambdas)
   condition_number = np.max(lambdas)/np.min(lambdas)
   return lambdas, NTK
 
