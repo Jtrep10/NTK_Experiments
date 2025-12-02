@@ -58,7 +58,7 @@ def DropConnect(width, rate, param):
         mask = bernoulli(rng, p=keep_prob, shape=W.shape)
         
         masked_W = W * mask / keep_prob
-        print(masked_W.shape)
+        # print(masked_W.shape)
         masked_params = (masked_W, b)
         return dense_apply(masked_params, inputs)
 
