@@ -15,7 +15,7 @@ Then run the ntk script with the config as a parameter:
 
 ```
 
-    python3 ntk_script cfg/full_experiment_match_meeting.json
+    python3 ntk_script.py cfg/full_experiment_match_meeting.json
 
 ```
 
