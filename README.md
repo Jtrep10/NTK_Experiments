@@ -20,3 +20,5 @@ Then run the ntk script with the config as a parameter:
 ```
 
 At the end of the run, the figures will be generated in the folder.
+
+ntk_script.py is the final iteration of our code. The notebooks folder shows previous iterations of our code. 
